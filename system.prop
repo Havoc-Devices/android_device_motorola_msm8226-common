@@ -103,3 +103,6 @@ camera2.portability.force_api=1
 # Higher fling velocities to smooth scrolling and provide better responsiveness
 ro.min.fling_velocity=160
 ro.max.fling_velocity=20000
+
+# Play store
+ro.com.google.clientidbase.gmm=android-motorola
