@@ -53,9 +53,6 @@ persist.gps.qc_nlp_in_use=0
 persist.loc.nlp_name=com.qualcomm.services.location
 
 # Media
-media.stagefright.legacyencoder=true
-media.stagefright.less-secure=true
-camera2.portability.force_api=1
 debug.camcorder.disablemeta=true
 
 # NITZ
