@@ -113,6 +113,7 @@ PRODUCT_PACKAGES += \
     libshims_camera \
     libshim_qcopt \
     libshims_sensorlistener \
+    libqsap_shim \
     Snap
 
 # Dalvik properties
