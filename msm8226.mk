@@ -111,6 +111,7 @@ PRODUCT_PACKAGES += \
     camera.device@1.0-impl \
     camera.msm8226 \
     libxml2 \
+    libqsap_shim \
     libshims_camera \
     libshim_qcopt \
     libshims_sensorlistener \
