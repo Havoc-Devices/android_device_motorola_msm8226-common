@@ -55,6 +55,7 @@ static int product_device = UNKNOWN;
 static Mutex gCameraWrapperLock;
 static camera_module_t *gVendorModule = 0;
 
+static int num_cameras = 0;
 static char **fixed_set_params = NULL;
 static camera_notify_callback gUserNotifyCb = NULL;
 static camera_data_callback gUserDataCb = NULL;
@@ -568,23 +569,22 @@ extern "C" void heaptracker_free_leaked_memory(void);
 static int camera_device_close(hw_device_t *device)
 {
     int ret = 0;
-    wrapper_camera_device_t *wrapper_dev = NULL;
-
-    ALOGV("%s", __FUNCTION__);
+    wrapper_camera_device_t *wrapper_dev = (wrapper_camera_device_t *) device;
 
     Mutex::Autolock lock(gCameraWrapperLock);
 
-    if (!device) {
+    if (!wrapper_dev) {
+        ALOGE("%s: device NULL", __FUNCTION__);
         ret = -EINVAL;
         goto done;
     }
 
-    for (int i = 0; i < camera_get_number_of_cameras(); i++) {
-        if (fixed_set_params[i])
-            free(fixed_set_params[i]);
-    }
+    ALOGV("%s: cam %d", __FUNCTION__, CAMERA_ID(wrapper_dev));
 
-    wrapper_dev = (wrapper_camera_device_t*) device;
+    if (fixed_set_params && fixed_set_params[wrapper_dev->id]) {
+        free(fixed_set_params[CAMERA_ID(wrapper_dev)]);
+        fixed_set_params[CAMERA_ID(wrapper_dev)] = NULL;
+    }
 
     if (!wrapper_dev->camera_released) {
         ALOGI("%s: releasing camera device with id %d", __FUNCTION__,
@@ -595,7 +595,7 @@ static int camera_device_close(hw_device_t *device)
         wrapper_dev->camera_released = true;
     }
 
-    wrapper_dev->vendor->common.close((hw_device_t*)wrapper_dev->vendor);
+    wrapper_dev->vendor->common.close((hw_device_t *) wrapper_dev->vendor);
     if (wrapper_dev->base.ops)
         free(wrapper_dev->base.ops);
     free(wrapper_dev);
@@ -620,7 +620,6 @@ static int camera_device_open(const hw_module_t *module, const char *name,
         hw_device_t **device)
 {
     int rv = 0;
-    int num_cameras = 0;
     int cameraid;
     wrapper_camera_device_t *camera_device = NULL;
     camera_device_ops_t *camera_ops = NULL;
@@ -633,18 +632,24 @@ static int camera_device_open(const hw_module_t *module, const char *name,
         if (check_vendor_module())
             return -EINVAL;
 
-        cameraid = atoi(name);
-        num_cameras = gVendorModule->get_number_of_cameras();
-
-        fixed_set_params = (char **) malloc(sizeof(char *) * num_cameras);
-        if (!fixed_set_params) {
-            ALOGE("parameter memory allocation fail");
-            rv = -ENOMEM;
-            goto fail;
+        if (num_cameras == 0) {
+            num_cameras = gVendorModule->get_number_of_cameras();
+            ALOGV("%s: %d cameras", __FUNCTION__, num_cameras);
         }
-        memset(fixed_set_params, 0, sizeof(char *) * num_cameras);
 
-        if (cameraid > num_cameras) {
+        /* On first invocation, prepare fixed_set_params block for all
+           available cameras. */
+        if (!fixed_set_params) {
+            fixed_set_params = (char **) calloc(num_cameras, sizeof(char *));
+            if (!fixed_set_params) {
+                ALOGE("Global parameter memory allocation fail");
+                rv = -ENOMEM;
+                goto fail;
+            }
+        }
+
+        cameraid = atoi(name);
+        if (cameraid < 0 || cameraid > num_cameras) {
             ALOGE("camera service provided cameraid out of bounds, "
                     "cameraid = %d, num supported = %d",
                     cameraid, num_cameras);
@@ -652,13 +657,12 @@ static int camera_device_open(const hw_module_t *module, const char *name,
             goto fail;
         }
 
-        camera_device = (wrapper_camera_device_t*)malloc(sizeof(*camera_device));
+        camera_device = (wrapper_camera_device_t *)calloc(1, sizeof(*camera_device));
         if (!camera_device) {
             ALOGE("camera_device allocation fail");
             rv = -ENOMEM;
             goto fail;
         }
-        memset(camera_device, 0, sizeof(*camera_device));
         camera_device->camera_released = false;
         camera_device->id = cameraid;
 
@@ -666,8 +670,8 @@ static int camera_device_open(const hw_module_t *module, const char *name,
         bool retry;
         do {
             rv = gVendorModule->common.methods->open(
-                    (const hw_module_t*)gVendorModule, name,
-                    (hw_device_t**)&(camera_device->vendor));
+                    (const hw_module_t *) gVendorModule, name,
+                    (hw_device_t **) &(camera_device->vendor));
             retry = --retries > 0 && rv;
             if (retry)
                 usleep(OPEN_RETRY_MSEC * 1000);
@@ -679,14 +683,12 @@ static int camera_device_open(const hw_module_t *module, const char *name,
         ALOGV("%s: got vendor camera device 0x%08X",
                 __FUNCTION__, (uintptr_t)(camera_device->vendor));
 
-        camera_ops = (camera_device_ops_t*)malloc(sizeof(*camera_ops));
+        camera_ops = (camera_device_ops_t *) calloc(1, sizeof(*camera_ops));
         if (!camera_ops) {
             ALOGE("camera_ops allocation fail");
             rv = -ENOMEM;
             goto fail;
         }
-
-        memset(camera_ops, 0, sizeof(*camera_ops));
 
         camera_device->base.common.tag = HARDWARE_DEVICE_TAG;
         camera_device->base.common.version = CAMERA_MODULE_API_VERSION_1_0;
@@ -738,10 +740,10 @@ fail:
 
 static int camera_get_number_of_cameras(void)
 {
-    ALOGV("%s", __FUNCTION__);
-    if (check_vendor_module())
-        return 0;
-    return gVendorModule->get_number_of_cameras();
+    if (num_cameras == 0 && !check_vendor_module())
+        num_cameras = gVendorModule->get_number_of_cameras();
+    ALOGV("%s: %d", __FUNCTION__, num_cameras);
+    return num_cameras;
 }
 
 static int camera_get_camera_info(int camera_id, struct camera_info *info)
