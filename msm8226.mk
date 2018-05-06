@@ -117,6 +117,9 @@ PRODUCT_PACKAGES += \
     libshims_sensorlistener \
     Snap
 
+PRODUCT_COPY_FILES += \
+    $(LOCAL_PATH)/configs/hdrhax:system/vendor/etc/hdrhax
+
 # Dalvik properties
 PRODUCT_PROPERTY_OVERRIDES += \
     dalvik.vm.heapstartsize=8m \
